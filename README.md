@@ -2,6 +2,9 @@
 
 `passgen` is a small Go CLI for generating cryptographically secure passwords.
 
+> [!WARNING]
+> This project is vibe-coded, but it is safe to use as a small utility when you need a quick, safe password in the terminal.
+
 ## Features
 
 - Uses `crypto/rand` for secure random generation.
