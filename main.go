@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -28,6 +29,8 @@ type options struct {
 	include   string
 	exclude   string
 	length    int
+	count     int
+	jsonOut   bool
 }
 
 func main() {
@@ -38,6 +41,7 @@ func main() {
 		symbols:   true,
 		urlsafe:   false,
 		length:    16,
+		count:     1,
 	}
 
 	cmd := &cobra.Command{
@@ -47,18 +51,47 @@ func main() {
 			if opts.length <= 0 {
 				return errors.New("--length must be greater than 0")
 			}
+			if opts.count <= 0 {
+				return errors.New("--count must be greater than 0")
+			}
 
 			pool, err := buildPool(opts)
 			if err != nil {
 				return err
 			}
 
-			pass, err := generatePassword(pool, opts.length)
-			if err != nil {
-				return err
+			passwords := make([]string, 0, opts.count)
+			for i := 0; i < opts.count; i++ {
+				pass, err := generatePassword(pool, opts.length)
+				if err != nil {
+					return err
+				}
+				passwords = append(passwords, pass)
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), pass)
+			if opts.jsonOut {
+				var payload any
+				if opts.count == 1 {
+					payload = struct {
+						Password string `json:"password"`
+					}{Password: passwords[0]}
+				} else {
+					payload = struct {
+						Passwords []string `json:"passwords"`
+					}{Passwords: passwords}
+				}
+
+				encoded, err := json.Marshal(payload)
+				if err != nil {
+					return fmt.Errorf("json output failed: %w", err)
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
+				return nil
+			}
+
+			for _, pass := range passwords {
+				fmt.Fprintln(cmd.OutOrStdout(), pass)
+			}
 			return nil
 		},
 	}
@@ -83,6 +116,8 @@ func main() {
 	cmd.Flags().StringVarP(&opts.include, "include", "i", "", "include specific characters")
 	cmd.Flags().StringVarP(&opts.exclude, "exclude", "x", "", "exclude specific characters")
 	cmd.Flags().IntVarP(&opts.length, "length", "k", 16, "password length")
+	cmd.Flags().IntVarP(&opts.count, "count", "c", 1, "number of passwords to generate")
+	cmd.Flags().BoolVar(&opts.jsonOut, "json", false, "output as JSON")
 
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		if *alpha {
