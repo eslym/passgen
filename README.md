@@ -51,6 +51,18 @@ Generate a 32-character password:
 passgen --length 32
 ```
 
+Generate 5 passwords at once:
+
+```bash
+passgen --count 5
+```
+
+Generate JSON output for scripts:
+
+```bash
+passgen --json
+```
+
 Disable symbols:
 
 ```bash
@@ -75,13 +87,21 @@ Remove ambiguous characters:
 passgen --exclude "O0Il"
 ```
 
+Inspect the effective pool used for generation:
+
+```bash
+passgen --show-pool
+```
+
 ## Flags
 
 ```text
   -a, --alpha            enable uppercase and lowercase
+  -c, --count int        number of passwords to generate (default 1)
   -x, --exclude string   exclude specific characters
   -h, --help             help for passgen
   -i, --include string   include specific characters
+      --json             output as JSON
   -k, --length int       password length (default 16)
   -l, --lowercase        enable lowercase letters (default true)
   -A, --no-alpha         disable uppercase and lowercase
@@ -92,9 +112,21 @@ passgen --exclude "O0Il"
   -Z, --no-urlsafe       disable URL-safe filtering
   -n, --numbers          enable numbers (default true)
   -s, --symbols          enable symbols (default true)
+      --show-pool        print effective character pool
   -u, --uppercase        enable uppercase letters (default true)
   -z, --urlsafe          only keep URL-safe chars in base pool
 ```
+
+## Precedence and pool order
+
+Character pool construction is applied in this order:
+
+1. Start from enabled base classes (`--uppercase`, `--lowercase`, `--numbers`, `--symbols`).
+2. Apply URL-safe filtering if `--urlsafe` is enabled.
+3. Remove characters from `--exclude`.
+4. Add characters from `--include`.
+
+`--include` and `--exclude` are validated first. If they overlap, the command exits with an error.
 
 ## Validation behavior
 

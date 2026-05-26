@@ -31,6 +31,7 @@ type options struct {
 	length    int
 	count     int
 	jsonOut   bool
+	showPool  bool
 }
 
 func main() {
@@ -72,13 +73,27 @@ func main() {
 			if opts.jsonOut {
 				var payload any
 				if opts.count == 1 {
-					payload = struct {
-						Password string `json:"password"`
-					}{Password: passwords[0]}
+					if opts.showPool {
+						payload = struct {
+							Password string `json:"password"`
+							Pool     string `json:"pool"`
+						}{Password: passwords[0], Pool: pool}
+					} else {
+						payload = struct {
+							Password string `json:"password"`
+						}{Password: passwords[0]}
+					}
 				} else {
-					payload = struct {
-						Passwords []string `json:"passwords"`
-					}{Passwords: passwords}
+					if opts.showPool {
+						payload = struct {
+							Passwords []string `json:"passwords"`
+							Pool      string   `json:"pool"`
+						}{Passwords: passwords, Pool: pool}
+					} else {
+						payload = struct {
+							Passwords []string `json:"passwords"`
+						}{Passwords: passwords}
+					}
 				}
 
 				encoded, err := json.Marshal(payload)
@@ -87,6 +102,10 @@ func main() {
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
 				return nil
+			}
+
+			if opts.showPool {
+				fmt.Fprintln(cmd.OutOrStdout(), pool)
 			}
 
 			for _, pass := range passwords {
@@ -118,6 +137,7 @@ func main() {
 	cmd.Flags().IntVarP(&opts.length, "length", "k", 16, "password length")
 	cmd.Flags().IntVarP(&opts.count, "count", "c", 1, "number of passwords to generate")
 	cmd.Flags().BoolVar(&opts.jsonOut, "json", false, "output as JSON")
+	cmd.Flags().BoolVar(&opts.showPool, "show-pool", false, "print effective character pool")
 
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		if *alpha {
