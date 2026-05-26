@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"strings"
@@ -32,10 +33,21 @@ type options struct {
 	count     int
 	jsonOut   bool
 	showPool  bool
+	out       string
 }
 
 func main() {
-	opts := options{
+	opts := defaultOptions()
+	cmd := newRootCmd(&opts)
+
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
+	}
+}
+
+func defaultOptions() options {
+	return options{
 		uppercase: true,
 		lowercase: true,
 		numbers:   true,
@@ -44,7 +56,9 @@ func main() {
 		length:    16,
 		count:     1,
 	}
+}
 
+func newRootCmd(opts *options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "passgen",
 		Short: "Generate cryptographically secure passwords",
@@ -56,7 +70,7 @@ func main() {
 				return errors.New("--count must be greater than 0")
 			}
 
-			pool, err := buildPool(opts)
+			pool, err := buildPool(*opts)
 			if err != nil {
 				return err
 			}
@@ -70,47 +84,19 @@ func main() {
 				passwords = append(passwords, pass)
 			}
 
-			if opts.jsonOut {
-				var payload any
-				if opts.count == 1 {
-					if opts.showPool {
-						payload = struct {
-							Password string `json:"password"`
-							Pool     string `json:"pool"`
-						}{Password: passwords[0], Pool: pool}
-					} else {
-						payload = struct {
-							Password string `json:"password"`
-						}{Password: passwords[0]}
-					}
-				} else {
-					if opts.showPool {
-						payload = struct {
-							Passwords []string `json:"passwords"`
-							Pool      string   `json:"pool"`
-						}{Passwords: passwords, Pool: pool}
-					} else {
-						payload = struct {
-							Passwords []string `json:"passwords"`
-						}{Passwords: passwords}
-					}
-				}
+			output, err := renderOutput(*opts, passwords, pool)
+			if err != nil {
+				return err
+			}
 
-				encoded, err := json.Marshal(payload)
-				if err != nil {
-					return fmt.Errorf("json output failed: %w", err)
+			if opts.out != "" {
+				if err := writeOutputFile(opts.out, output, cmd.ErrOrStderr()); err != nil {
+					return err
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
 				return nil
 			}
 
-			if opts.showPool {
-				fmt.Fprintln(cmd.OutOrStdout(), pool)
-			}
-
-			for _, pass := range passwords {
-				fmt.Fprintln(cmd.OutOrStdout(), pass)
-			}
+			fmt.Fprint(cmd.OutOrStdout(), output)
 			return nil
 		},
 	}
@@ -138,6 +124,7 @@ func main() {
 	cmd.Flags().IntVarP(&opts.count, "count", "c", 1, "number of passwords to generate")
 	cmd.Flags().BoolVar(&opts.jsonOut, "json", false, "output as JSON")
 	cmd.Flags().BoolVar(&opts.showPool, "show-pool", false, "print effective character pool")
+	cmd.Flags().StringVar(&opts.out, "out", "", "write output to file with mode 600")
 
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		if *alpha {
@@ -165,10 +152,65 @@ func main() {
 		}
 	}
 
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+	return cmd
+}
+
+func renderOutput(opts options, passwords []string, pool string) (string, error) {
+	if opts.jsonOut {
+		var payload any
+		if opts.count == 1 {
+			if opts.showPool {
+				payload = struct {
+					Password string `json:"password"`
+					Pool     string `json:"pool"`
+				}{Password: passwords[0], Pool: pool}
+			} else {
+				payload = struct {
+					Password string `json:"password"`
+				}{Password: passwords[0]}
+			}
+		} else {
+			if opts.showPool {
+				payload = struct {
+					Passwords []string `json:"passwords"`
+					Pool      string   `json:"pool"`
+				}{Passwords: passwords, Pool: pool}
+			} else {
+				payload = struct {
+					Passwords []string `json:"passwords"`
+				}{Passwords: passwords}
+			}
+		}
+
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("json output failed: %w", err)
+		}
+		return string(encoded) + "\n", nil
 	}
+
+	var builder strings.Builder
+	if opts.showPool {
+		builder.WriteString(pool)
+		builder.WriteString("\n")
+	}
+	for _, pass := range passwords {
+		builder.WriteString(pass)
+		builder.WriteString("\n")
+	}
+	return builder.String(), nil
+}
+
+func writeOutputFile(path, output string, errWriter io.Writer) error {
+	if err := os.WriteFile(path, []byte(output), 0o600); err != nil {
+		return fmt.Errorf("failed writing output file %q: %w", path, err)
+	}
+	fprintfErr(errWriter, "Wrote output to %s with mode 600\n", path)
+	return nil
+}
+
+func fprintfErr(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...)
 }
 
 func buildPool(opts options) (string, error) {

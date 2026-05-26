@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -78,5 +81,85 @@ func TestBuildPool(t *testing.T) {
 				t.Fatalf("unexpected pool\nwant: %q\ngot:  %q", tc.want, got)
 			}
 		})
+	}
+}
+
+func TestWriteOutputFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("writes file with mode 600 and stderr message", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		outPath := filepath.Join(tmpDir, "secret.txt")
+		content := "supersecret\n"
+		var errBuf bytes.Buffer
+
+		err := writeOutputFile(outPath, content, &errBuf)
+		if err != nil {
+			t.Fatalf("writeOutputFile returned error: %v", err)
+		}
+
+		gotBytes, err := os.ReadFile(outPath)
+		if err != nil {
+			t.Fatalf("failed reading output file: %v", err)
+		}
+		if string(gotBytes) != content {
+			t.Fatalf("unexpected file content\nwant: %q\ngot:  %q", content, string(gotBytes))
+		}
+
+		info, err := os.Stat(outPath)
+		if err != nil {
+			t.Fatalf("failed stating output file: %v", err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("unexpected file mode\nwant: %o\ngot:  %o", 0o600, info.Mode().Perm())
+		}
+
+		msg := errBuf.String()
+		if !strings.Contains(msg, outPath) {
+			t.Fatalf("stderr message should include output path, got: %q", msg)
+		}
+		if !strings.Contains(msg, "mode 600") {
+			t.Fatalf("stderr message should mention mode 600, got: %q", msg)
+		}
+	})
+}
+
+func TestOutFlagSuppressesStdout(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "secret.txt")
+
+	opts := defaultOptions()
+	cmd := newRootCmd(&opts)
+	cmd.SetArgs([]string{"--length", "8", "--count", "1", "--out", outPath})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("command execution failed: %v", err)
+	}
+
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout when --out is used, got: %q", stdout.String())
+	}
+
+	stderrMsg := stderr.String()
+	if !strings.Contains(stderrMsg, outPath) {
+		t.Fatalf("stderr should include output path, got: %q", stderrMsg)
+	}
+
+	written, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("expected output file to exist: %v", err)
+	}
+	if len(strings.TrimSpace(string(written))) == 0 {
+		t.Fatalf("expected output file to contain generated password")
 	}
 }

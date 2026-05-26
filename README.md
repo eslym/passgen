@@ -63,6 +63,12 @@ Generate JSON output for scripts:
 passgen --json
 ```
 
+Write generated output to a file with mode `600` (prints status to stderr only):
+
+```bash
+passgen --out ./secret.txt
+```
+
 Disable symbols:
 
 ```bash
@@ -107,6 +113,7 @@ passgen --show-pool
   -A, --no-alpha         disable uppercase and lowercase
   -L, --no-lowercase     disable lowercase letters
   -N, --no-numbers       disable numbers
+      --out string       write output to file with mode 600
   -S, --no-symbols       disable symbols
   -U, --no-uppercase     disable uppercase letters
   -Z, --no-urlsafe       disable URL-safe filtering
@@ -131,6 +138,7 @@ Character pool construction is applied in this order:
 ## Validation behavior
 
 - `--length` must be greater than `0`.
+- When `--out` is set, output is written only to the file (mode `600`) and a status line is printed to stderr.
 - If the same character appears in both `--include` and `--exclude`, the command exits with an error.
 - If your rules produce an empty character pool, the command exits with an error.
 
