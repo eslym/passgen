@@ -68,7 +68,7 @@ func newRootCmd(opts *options) *cobra.Command {
 			"  passgen",
 			"  passgen --length 32",
 			"  passgen --count 5 --json",
-			"  passgen --urlsafe --no-symbols",
+			"  passgen --urlsafe --symbols=false",
 			"  passgen --include \"@#\" --exclude \"O0Il\"",
 			"  passgen --out ./secret.txt",
 		}, "\n"),
@@ -120,13 +120,7 @@ func newRootCmd(opts *options) *cobra.Command {
 	cmd.Flags().BoolVarP(&opts.symbols, "symbols", "s", true, "include symbols in base pool")
 	cmd.Flags().BoolVarP(&opts.urlsafe, "urlsafe", "z", false, "filter base pool to URL-safe characters")
 
-	noUpper := cmd.Flags().BoolP("no-uppercase", "U", false, "remove uppercase letters from base pool")
-	noLower := cmd.Flags().BoolP("no-lowercase", "L", false, "remove lowercase letters from base pool")
 	alpha := cmd.Flags().BoolP("alpha", "a", false, "enable both uppercase and lowercase")
-	noAlpha := cmd.Flags().BoolP("no-alpha", "A", false, "disable both uppercase and lowercase")
-	noNumbers := cmd.Flags().BoolP("no-numbers", "N", false, "remove numbers from base pool")
-	noSymbols := cmd.Flags().BoolP("no-symbols", "S", false, "remove symbols from base pool")
-	noURLSafe := cmd.Flags().BoolP("no-urlsafe", "Z", false, "disable URL-safe filtering")
 
 	cmd.Flags().StringVarP(&opts.include, "include", "i", "", "add specific characters after filtering")
 	cmd.Flags().StringVarP(&opts.exclude, "exclude", "x", "", "remove specific characters before include")
@@ -140,25 +134,6 @@ func newRootCmd(opts *options) *cobra.Command {
 		if *alpha {
 			opts.uppercase = true
 			opts.lowercase = true
-		}
-		if *noAlpha {
-			opts.uppercase = false
-			opts.lowercase = false
-		}
-		if *noUpper {
-			opts.uppercase = false
-		}
-		if *noLower {
-			opts.lowercase = false
-		}
-		if *noNumbers {
-			opts.numbers = false
-		}
-		if *noSymbols {
-			opts.symbols = false
-		}
-		if *noURLSafe {
-			opts.urlsafe = false
 		}
 	}
 

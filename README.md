@@ -72,13 +72,13 @@ passgen --out ./secret.txt
 Disable symbols:
 
 ```bash
-passgen --no-symbols
+passgen --symbols=false
 ```
 
 Use only URL-safe characters:
 
 ```bash
-passgen --urlsafe --no-symbols
+passgen --urlsafe --symbols=false
 ```
 
 Force a few characters into the pool:
@@ -102,26 +102,20 @@ passgen --show-pool
 ## Flags
 
 ```text
-  -a, --alpha            enable uppercase and lowercase
+  -a, --alpha            enable both uppercase and lowercase
   -c, --count int        number of passwords to generate (default 1)
   -x, --exclude string   exclude specific characters
   -h, --help             help for passgen
-  -i, --include string   include specific characters
+  -i, --include string   add specific characters after filtering
       --json             output as JSON
   -k, --length int       password length (default 16)
-  -l, --lowercase        enable lowercase letters (default true)
-  -A, --no-alpha         disable uppercase and lowercase
-  -L, --no-lowercase     disable lowercase letters
-  -N, --no-numbers       disable numbers
-      --out string       write output to file with mode 600
-  -S, --no-symbols       disable symbols
-  -U, --no-uppercase     disable uppercase letters
-  -Z, --no-urlsafe       disable URL-safe filtering
-  -n, --numbers          enable numbers (default true)
-  -s, --symbols          enable symbols (default true)
+  -l, --lowercase        include lowercase letters in base pool (default true)
+  -n, --numbers          include numbers in base pool (default true)
+      --out string       write output to file (mode 600), suppress stdout
+  -s, --symbols          include symbols in base pool (default true)
       --show-pool        print effective character pool
-  -u, --uppercase        enable uppercase letters (default true)
-  -z, --urlsafe          only keep URL-safe chars in base pool
+  -u, --uppercase        include uppercase letters in base pool (default true)
+  -z, --urlsafe          filter base pool to URL-safe characters
 ```
 
 ## Precedence and pool order
