@@ -1,4 +1,4 @@
-module passgen
+module github.com/eslym/passgen
 
 go 1.26
 
