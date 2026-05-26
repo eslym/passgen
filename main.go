@@ -62,6 +62,16 @@ func newRootCmd(opts *options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "passgen",
 		Short: "Generate cryptographically secure passwords",
+		Long: "passgen generates cryptographically secure passwords using crypto/rand. " +
+			"You can tune the character pool with class flags and include/exclude rules.",
+		Example: strings.Join([]string{
+			"  passgen",
+			"  passgen --length 32",
+			"  passgen --count 5 --json",
+			"  passgen --urlsafe --no-symbols",
+			"  passgen --include \"@#\" --exclude \"O0Il\"",
+			"  passgen --out ./secret.txt",
+		}, "\n"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if opts.length <= 0 {
 				return errors.New("--length must be greater than 0")
@@ -104,27 +114,27 @@ func newRootCmd(opts *options) *cobra.Command {
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 
-	cmd.Flags().BoolVarP(&opts.uppercase, "uppercase", "u", true, "enable uppercase letters")
-	cmd.Flags().BoolVarP(&opts.lowercase, "lowercase", "l", true, "enable lowercase letters")
-	cmd.Flags().BoolVarP(&opts.numbers, "numbers", "n", true, "enable numbers")
-	cmd.Flags().BoolVarP(&opts.symbols, "symbols", "s", true, "enable symbols")
-	cmd.Flags().BoolVarP(&opts.urlsafe, "urlsafe", "z", false, "only keep URL-safe chars in base pool")
+	cmd.Flags().BoolVarP(&opts.uppercase, "uppercase", "u", true, "include uppercase letters in base pool")
+	cmd.Flags().BoolVarP(&opts.lowercase, "lowercase", "l", true, "include lowercase letters in base pool")
+	cmd.Flags().BoolVarP(&opts.numbers, "numbers", "n", true, "include numbers in base pool")
+	cmd.Flags().BoolVarP(&opts.symbols, "symbols", "s", true, "include symbols in base pool")
+	cmd.Flags().BoolVarP(&opts.urlsafe, "urlsafe", "z", false, "filter base pool to URL-safe characters")
 
-	noUpper := cmd.Flags().BoolP("no-uppercase", "U", false, "disable uppercase letters")
-	noLower := cmd.Flags().BoolP("no-lowercase", "L", false, "disable lowercase letters")
-	alpha := cmd.Flags().BoolP("alpha", "a", false, "enable uppercase and lowercase")
-	noAlpha := cmd.Flags().BoolP("no-alpha", "A", false, "disable uppercase and lowercase")
-	noNumbers := cmd.Flags().BoolP("no-numbers", "N", false, "disable numbers")
-	noSymbols := cmd.Flags().BoolP("no-symbols", "S", false, "disable symbols")
+	noUpper := cmd.Flags().BoolP("no-uppercase", "U", false, "remove uppercase letters from base pool")
+	noLower := cmd.Flags().BoolP("no-lowercase", "L", false, "remove lowercase letters from base pool")
+	alpha := cmd.Flags().BoolP("alpha", "a", false, "enable both uppercase and lowercase")
+	noAlpha := cmd.Flags().BoolP("no-alpha", "A", false, "disable both uppercase and lowercase")
+	noNumbers := cmd.Flags().BoolP("no-numbers", "N", false, "remove numbers from base pool")
+	noSymbols := cmd.Flags().BoolP("no-symbols", "S", false, "remove symbols from base pool")
 	noURLSafe := cmd.Flags().BoolP("no-urlsafe", "Z", false, "disable URL-safe filtering")
 
-	cmd.Flags().StringVarP(&opts.include, "include", "i", "", "include specific characters")
-	cmd.Flags().StringVarP(&opts.exclude, "exclude", "x", "", "exclude specific characters")
+	cmd.Flags().StringVarP(&opts.include, "include", "i", "", "add specific characters after filtering")
+	cmd.Flags().StringVarP(&opts.exclude, "exclude", "x", "", "remove specific characters before include")
 	cmd.Flags().IntVarP(&opts.length, "length", "k", 16, "password length")
 	cmd.Flags().IntVarP(&opts.count, "count", "c", 1, "number of passwords to generate")
 	cmd.Flags().BoolVar(&opts.jsonOut, "json", false, "output as JSON")
 	cmd.Flags().BoolVar(&opts.showPool, "show-pool", false, "print effective character pool")
-	cmd.Flags().StringVar(&opts.out, "out", "", "write output to file with mode 600")
+	cmd.Flags().StringVar(&opts.out, "out", "", "write output to file (mode 600), suppress stdout")
 
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		if *alpha {
