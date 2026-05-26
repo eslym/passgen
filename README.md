@@ -11,7 +11,7 @@
 
 ## Requirements
 
-- Go 1.22+
+- Go 1.26.3+
 
 ## Build and run
 
