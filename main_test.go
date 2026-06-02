@@ -2,11 +2,26 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func executeCommand(args ...string) (string, string, error) {
+	opts := defaultOptions()
+	cmd := newRootCmd(&opts)
+	cmd.SetArgs(args)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	err := cmd.Execute()
+	return stdout.String(), stderr.String(), err
+}
 
 func TestBuildPool(t *testing.T) {
 	t.Parallel()
@@ -252,6 +267,126 @@ func TestPresetModifierWarning(t *testing.T) {
 
 		if stderr.Len() != 0 {
 			t.Fatalf("expected no stderr warning, got: %q", stderr.String())
+		}
+	})
+}
+
+func TestPresetCLIBehavior(t *testing.T) {
+	t.Parallel()
+
+	classOffArgs := []string{"--uppercase=false", "--lowercase=false", "--numbers=false", "--symbols=false"}
+
+	t.Run("show-pool prints preset-only pool before password", func(t *testing.T) {
+		t.Parallel()
+
+		args := append([]string{"--preset", "hex", "--show-pool", "--length", "4"}, classOffArgs...)
+		stdout, stderr, err := executeCommand(args...)
+		if err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if stderr != "" {
+			t.Fatalf("expected no stderr, got: %q", stderr)
+		}
+
+		lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+		if len(lines) != 2 {
+			t.Fatalf("expected pool and password lines, got %d lines in %q", len(lines), stdout)
+		}
+		if lines[0] != hexChars {
+			t.Fatalf("unexpected pool line\nwant: %q\ngot:  %q", hexChars, lines[0])
+		}
+		if len(lines[1]) != 4 {
+			t.Fatalf("expected 4-character password, got %q", lines[1])
+		}
+		for _, r := range lines[1] {
+			if !strings.ContainsRune(hexChars, r) {
+				t.Fatalf("password contains rune %q outside hex preset: %q", r, lines[1])
+			}
+		}
+	})
+
+	t.Run("alias produces canonical show-pool output", func(t *testing.T) {
+		t.Parallel()
+
+		args := append([]string{"--preset", "b64url", "--show-pool", "--length", "1"}, classOffArgs...)
+		stdout, stderr, err := executeCommand(args...)
+		if err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if stderr != "" {
+			t.Fatalf("expected no stderr, got: %q", stderr)
+		}
+
+		poolLine := strings.SplitN(stdout, "\n", 2)[0]
+		if poolLine != base64URLChars {
+			t.Fatalf("unexpected pool line\nwant: %q\ngot:  %q", base64URLChars, poolLine)
+		}
+	})
+
+	t.Run("json includes effective preset pool", func(t *testing.T) {
+		t.Parallel()
+
+		args := append([]string{"--preset", "b58", "--json", "--show-pool", "--length", "6"}, classOffArgs...)
+		stdout, stderr, err := executeCommand(args...)
+		if err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if stderr != "" {
+			t.Fatalf("expected no stderr, got: %q", stderr)
+		}
+
+		var payload struct {
+			Password string `json:"password"`
+			Pool     string `json:"pool"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+			t.Fatalf("failed decoding json output %q: %v", stdout, err)
+		}
+		if payload.Pool != base58Chars {
+			t.Fatalf("unexpected json pool\nwant: %q\ngot:  %q", base58Chars, payload.Pool)
+		}
+		if len(payload.Password) != 6 {
+			t.Fatalf("expected 6-character password, got %q", payload.Password)
+		}
+	})
+
+	t.Run("urlsafe filters preset output", func(t *testing.T) {
+		t.Parallel()
+
+		args := append([]string{"--preset", "base64", "--urlsafe", "--show-pool", "--length", "1"}, classOffArgs...)
+		stdout, stderr, err := executeCommand(args...)
+		if err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if !strings.Contains(stderr, "--urlsafe") {
+			t.Fatalf("expected warning to mention --urlsafe, got: %q", stderr)
+		}
+
+		wantPool := filterAllowed(base64Chars, urlSafeChars)
+		poolLine := strings.SplitN(stdout, "\n", 2)[0]
+		if poolLine != wantPool {
+			t.Fatalf("unexpected pool line\nwant: %q\ngot:  %q", wantPool, poolLine)
+		}
+		if strings.ContainsAny(poolLine, "+/") {
+			t.Fatalf("urlsafe pool should not contain + or /, got: %q", poolLine)
+		}
+	})
+
+	t.Run("unknown preset returns command error", func(t *testing.T) {
+		t.Parallel()
+
+		stdout, stderr, err := executeCommand("--preset", "base32", "--length", "1")
+		if err == nil {
+			t.Fatalf("expected command error, got nil")
+		}
+		if !strings.Contains(err.Error(), "unknown preset") {
+			t.Fatalf("expected unknown preset error, got: %v", err)
+		}
+		if stdout != "" {
+			t.Fatalf("expected no stdout on error, got: %q", stdout)
+		}
+		if stderr != "" {
+			t.Fatalf("expected no command stderr on returned error, got: %q", stderr)
 		}
 	})
 }
