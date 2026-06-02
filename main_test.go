@@ -543,6 +543,33 @@ func TestPresetModifierWarning(t *testing.T) {
 	})
 }
 
+func TestAlphaOverrideWarning(t *testing.T) {
+	t.Parallel()
+
+	stdout, stderr, err := executeCommand("--alpha", "--uppercase=false", "--lowercase=false", "--numbers=false", "--symbols=false", "--length", "4")
+	if err != nil {
+		t.Fatalf("command execution failed: %v", err)
+	}
+	if !strings.Contains(stderr, "Warning: --alpha overrides explicit case flags") {
+		t.Fatalf("expected alpha override warning, got: %q", stderr)
+	}
+	for _, flag := range []string{"--uppercase=false", "--lowercase=false"} {
+		if !strings.Contains(stderr, flag) {
+			t.Fatalf("expected warning to mention %s, got: %q", flag, stderr)
+		}
+	}
+
+	password := strings.TrimSpace(stdout)
+	if len(password) != 4 {
+		t.Fatalf("expected 4-character password, got %q", password)
+	}
+	for _, r := range password {
+		if !strings.ContainsRune(uppercaseChars+lowercaseChars, r) {
+			t.Fatalf("password contains rune %q outside alpha pool: %q", r, password)
+		}
+	}
+}
+
 func TestPresetCLIBehavior(t *testing.T) {
 	t.Parallel()
 

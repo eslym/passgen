@@ -156,6 +156,16 @@ func newRootCmd(opts *options) *cobra.Command {
 
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		if *alpha {
+			var overridden []string
+			if cmd.Flags().Changed("uppercase") && !opts.uppercase {
+				overridden = append(overridden, "--uppercase=false")
+			}
+			if cmd.Flags().Changed("lowercase") && !opts.lowercase {
+				overridden = append(overridden, "--lowercase=false")
+			}
+			if len(overridden) > 0 {
+				fprintfErr(cmd.ErrOrStderr(), "Warning: --alpha overrides explicit case flags: %s\n", strings.Join(overridden, ", "))
+			}
 			opts.uppercase = true
 			opts.lowercase = true
 		}
