@@ -150,7 +150,7 @@ func TestWriteOutputFile(t *testing.T) {
 		content := "supersecret\n"
 		var errBuf bytes.Buffer
 
-		err := writeOutputFile(outPath, content, &errBuf)
+		err := writeOutputFile(outPath, content, &errBuf, strings.NewReader(""), false)
 		if err != nil {
 			t.Fatalf("writeOutputFile returned error: %v", err)
 		}
@@ -177,6 +177,126 @@ func TestWriteOutputFile(t *testing.T) {
 		}
 		if !strings.Contains(msg, "mode 600") {
 			t.Fatalf("stderr message should mention mode 600, got: %q", msg)
+		}
+	})
+
+	t.Run("refuses existing file without confirmation", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		outPath := filepath.Join(tmpDir, "secret.txt")
+		original := "keep me\n"
+		if err := os.WriteFile(outPath, []byte(original), 0o600); err != nil {
+			t.Fatalf("failed preparing output file: %v", err)
+		}
+
+		var errBuf bytes.Buffer
+		err := writeOutputFile(outPath, "replace me\n", &errBuf, strings.NewReader("n\n"), false)
+		if err == nil {
+			t.Fatalf("expected overwrite refusal, got nil")
+		}
+		if !strings.Contains(err.Error(), "refusing to overwrite") {
+			t.Fatalf("expected overwrite refusal, got: %v", err)
+		}
+		if !strings.Contains(errBuf.String(), "Overwrite?") {
+			t.Fatalf("expected confirmation prompt, got: %q", errBuf.String())
+		}
+
+		got, err := os.ReadFile(outPath)
+		if err != nil {
+			t.Fatalf("failed reading output file: %v", err)
+		}
+		if string(got) != original {
+			t.Fatalf("existing file should not be changed\nwant: %q\ngot:  %q", original, string(got))
+		}
+	})
+
+	t.Run("overwrites existing file after confirmation", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		outPath := filepath.Join(tmpDir, "secret.txt")
+		content := "new secret\n"
+		if err := os.WriteFile(outPath, []byte("old secret\n"), 0o600); err != nil {
+			t.Fatalf("failed preparing output file: %v", err)
+		}
+
+		var errBuf bytes.Buffer
+		err := writeOutputFile(outPath, content, &errBuf, strings.NewReader("yes\n"), false)
+		if err != nil {
+			t.Fatalf("writeOutputFile returned error: %v", err)
+		}
+		if !strings.Contains(errBuf.String(), "Overwrite?") {
+			t.Fatalf("expected confirmation prompt, got: %q", errBuf.String())
+		}
+
+		got, err := os.ReadFile(outPath)
+		if err != nil {
+			t.Fatalf("failed reading output file: %v", err)
+		}
+		if string(got) != content {
+			t.Fatalf("unexpected file content\nwant: %q\ngot:  %q", content, string(got))
+		}
+	})
+
+	t.Run("force overwrites existing file without confirmation", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		outPath := filepath.Join(tmpDir, "secret.txt")
+		content := "forced secret\n"
+		if err := os.WriteFile(outPath, []byte("old secret\n"), 0o600); err != nil {
+			t.Fatalf("failed preparing output file: %v", err)
+		}
+
+		var errBuf bytes.Buffer
+		err := writeOutputFile(outPath, content, &errBuf, strings.NewReader(""), true)
+		if err != nil {
+			t.Fatalf("writeOutputFile returned error: %v", err)
+		}
+		if strings.Contains(errBuf.String(), "Overwrite?") {
+			t.Fatalf("did not expect confirmation prompt with force, got: %q", errBuf.String())
+		}
+
+		got, err := os.ReadFile(outPath)
+		if err != nil {
+			t.Fatalf("failed reading output file: %v", err)
+		}
+		if string(got) != content {
+			t.Fatalf("unexpected file content\nwant: %q\ngot:  %q", content, string(got))
+		}
+	})
+
+	t.Run("warns and fixes existing file mode", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		outPath := filepath.Join(tmpDir, "secret.txt")
+		content := "secret\n"
+		if err := os.WriteFile(outPath, []byte("old secret\n"), 0o644); err != nil {
+			t.Fatalf("failed preparing output file: %v", err)
+		}
+
+		var errBuf bytes.Buffer
+		err := writeOutputFile(outPath, content, &errBuf, strings.NewReader("y\n"), false)
+		if err != nil {
+			t.Fatalf("writeOutputFile returned error: %v", err)
+		}
+
+		msg := errBuf.String()
+		if !strings.Contains(msg, "Warning: existing output file") {
+			t.Fatalf("expected mode warning, got: %q", msg)
+		}
+		if !strings.Contains(msg, "mode 644") {
+			t.Fatalf("expected warning to mention old mode, got: %q", msg)
+		}
+
+		info, err := os.Stat(outPath)
+		if err != nil {
+			t.Fatalf("failed stating output file: %v", err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("unexpected file mode\nwant: %o\ngot:  %o", 0o600, info.Mode().Perm())
 		}
 	})
 }
@@ -217,6 +337,88 @@ func TestOutFlagSuppressesStdout(t *testing.T) {
 	if len(strings.TrimSpace(string(written))) == 0 {
 		t.Fatalf("expected output file to contain generated password")
 	}
+}
+
+func TestOutFlagExistingFileConfirmation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("refuses existing file when confirmation is declined", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		outPath := filepath.Join(tmpDir, "secret.txt")
+		original := "existing\n"
+		if err := os.WriteFile(outPath, []byte(original), 0o600); err != nil {
+			t.Fatalf("failed preparing output file: %v", err)
+		}
+
+		opts := defaultOptions()
+		cmd := newRootCmd(&opts)
+		cmd.SetArgs([]string{"--length", "8", "--out", outPath})
+		cmd.SetIn(strings.NewReader("n\n"))
+
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatalf("expected command error, got nil")
+		}
+		if !strings.Contains(stderr.String(), "Overwrite?") {
+			t.Fatalf("expected confirmation prompt, got: %q", stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Fatalf("expected no stdout on refusal, got: %q", stdout.String())
+		}
+
+		got, err := os.ReadFile(outPath)
+		if err != nil {
+			t.Fatalf("failed reading output file: %v", err)
+		}
+		if string(got) != original {
+			t.Fatalf("existing file should not be changed\nwant: %q\ngot:  %q", original, string(got))
+		}
+	})
+
+	t.Run("force overwrites existing file without prompt", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		outPath := filepath.Join(tmpDir, "secret.txt")
+		if err := os.WriteFile(outPath, []byte("existing\n"), 0o600); err != nil {
+			t.Fatalf("failed preparing output file: %v", err)
+		}
+
+		opts := defaultOptions()
+		cmd := newRootCmd(&opts)
+		cmd.SetArgs([]string{"--length", "8", "--out", outPath, "--force"})
+		cmd.SetIn(strings.NewReader(""))
+
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if strings.Contains(stderr.String(), "Overwrite?") {
+			t.Fatalf("did not expect confirmation prompt, got: %q", stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Fatalf("expected no stdout with --out, got: %q", stdout.String())
+		}
+
+		written, err := os.ReadFile(outPath)
+		if err != nil {
+			t.Fatalf("expected output file to exist: %v", err)
+		}
+		if len(strings.TrimSpace(string(written))) != 8 {
+			t.Fatalf("expected 8-character generated password, got: %q", string(written))
+		}
+	})
 }
 
 func TestPresetModifierWarning(t *testing.T) {

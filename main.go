@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -51,6 +52,7 @@ type options struct {
 	jsonOut   bool
 	showPool  bool
 	out       string
+	force     bool
 }
 
 func main() {
@@ -119,7 +121,7 @@ func newRootCmd(opts *options) *cobra.Command {
 			}
 
 			if opts.out != "" {
-				if err := writeOutputFile(opts.out, output, cmd.ErrOrStderr()); err != nil {
+				if err := writeOutputFile(opts.out, output, cmd.ErrOrStderr(), cmd.InOrStdin(), opts.force); err != nil {
 					return err
 				}
 				return nil
@@ -149,6 +151,7 @@ func newRootCmd(opts *options) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.jsonOut, "json", false, "output as JSON")
 	cmd.Flags().BoolVar(&opts.showPool, "show-pool", false, "print effective character pool")
 	cmd.Flags().StringVar(&opts.out, "out", "", "write output to file (mode 600), suppress stdout")
+	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "overwrite existing output file without confirmation")
 
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		if *alpha {
@@ -206,12 +209,48 @@ func renderOutput(opts options, passwords []string, pool string) (string, error)
 	return builder.String(), nil
 }
 
-func writeOutputFile(path, output string, errWriter io.Writer) error {
+func writeOutputFile(path, output string, errWriter io.Writer, in io.Reader, force bool) error {
+	info, err := os.Stat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed stating output file %q: %w", path, err)
+	}
+
+	if err == nil {
+		if info.IsDir() {
+			return fmt.Errorf("output path %q is a directory", path)
+		}
+		if !force {
+			confirmed, err := confirmOverwrite(path, errWriter, in)
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				return fmt.Errorf("refusing to overwrite existing file %q", path)
+			}
+		}
+		if info.Mode().Perm() != 0o600 {
+			fprintfErr(errWriter, "Warning: existing output file %s has mode %o, expected 600; updating mode to 600\n", path, info.Mode().Perm())
+		}
+	}
+
 	if err := os.WriteFile(path, []byte(output), 0o600); err != nil {
 		return fmt.Errorf("failed writing output file %q: %w", path, err)
 	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("failed setting output file %q mode to 600: %w", path, err)
+	}
 	fprintfErr(errWriter, "Wrote output to %s with mode 600\n", path)
 	return nil
+}
+
+func confirmOverwrite(path string, errWriter io.Writer, in io.Reader) (bool, error) {
+	fprintfErr(errWriter, "Output file %s already exists. Overwrite? [y/N]: ", path)
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, fmt.Errorf("failed reading overwrite confirmation: %w", err)
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes", nil
 }
 
 func fprintfErr(w io.Writer, format string, args ...any) {

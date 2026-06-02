@@ -70,6 +70,12 @@ Write generated output to a file with mode `600` (prints status to stderr only):
 passgen --out ./secret.txt
 ```
 
+Overwrite an existing output file without prompting:
+
+```bash
+passgen --out ./secret.txt --force
+```
+
 Disable symbols:
 
 ```bash
@@ -112,6 +118,7 @@ passgen --show-pool
   -a, --alpha            enable both uppercase and lowercase
   -c, --count int        number of passwords to generate (default 1)
   -x, --exclude string   exclude specific characters
+  -f, --force            overwrite existing output file without confirmation
   -h, --help             help for passgen
   -i, --include string   add specific characters after filtering
       --json             output as JSON
@@ -152,6 +159,8 @@ When `--preset` is used with any other effective pool modifier, `passgen` prints
 
 - `--length` must be greater than `0`.
 - When `--out` is set, output is written only to the file (mode `600`) and a status line is printed to stderr.
+- Existing `--out` files require confirmation unless `--force` is set.
+- Existing `--out` files with a mode other than `600` print a warning to stderr before the mode is updated.
 - If the same character appears in both `--include` and `--exclude`, the command exits with an error.
 - If your rules produce an empty character pool, the command exits with an error.
 
