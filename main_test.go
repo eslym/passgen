@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -339,6 +340,35 @@ func TestWriteOutputFile(t *testing.T) {
 			t.Fatalf("unexpected file mode\nwant: %o\ngot:  %o", 0o600, info.Mode().Perm())
 		}
 	})
+}
+
+func TestAtomicWriteFileReportsPostRenameSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "secret.txt")
+	syncErr := errors.New("sync failed")
+
+	fileReplaced, err := atomicWriteFileWithSync(outPath, []byte("secret\n"), 0o600, func(dir string) error {
+		if dir != tmpDir {
+			t.Fatalf("unexpected sync directory\nwant: %q\ngot:  %q", tmpDir, dir)
+		}
+		return syncErr
+	})
+	if !fileReplaced {
+		t.Fatalf("expected fileReplaced to be true after rename")
+	}
+	if !errors.Is(err, syncErr) {
+		t.Fatalf("expected sync error, got: %v", err)
+	}
+
+	got, readErr := os.ReadFile(outPath)
+	if readErr != nil {
+		t.Fatalf("expected renamed file to exist: %v", readErr)
+	}
+	if string(got) != "secret\n" {
+		t.Fatalf("unexpected file content\nwant: %q\ngot:  %q", "secret\n", string(got))
+	}
 }
 
 func TestOutFlagSuppressesStdout(t *testing.T) {

@@ -237,20 +237,28 @@ func writeOutputFile(path, output string, errWriter io.Writer, in io.Reader, for
 		}
 	}
 
-	if err := atomicWriteFile(path, []byte(output), 0o600); err != nil {
+	fileReplaced, err := atomicWriteFile(path, []byte(output), 0o600)
+	if err != nil {
+		if fileReplaced {
+			return fmt.Errorf("wrote output file %q, but failed syncing output directory: %w", path, err)
+		}
 		return fmt.Errorf("failed writing output file %q: %w", path, err)
 	}
 	fprintfErr(errWriter, "Wrote output to %s with mode 600\n", path)
 	return nil
 }
 
-func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+func atomicWriteFile(path string, data []byte, mode os.FileMode) (bool, error) {
+	return atomicWriteFileWithSync(path, data, mode, syncDir)
+}
+
+func atomicWriteFileWithSync(path string, data []byte, mode os.FileMode, syncDirFunc func(string) error) (bool, error) {
 	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 
 	tmp, err := os.CreateTemp(dir, "."+base+"-*")
 	if err != nil {
-		return err
+		return false, err
 	}
 	tmpPath := tmp.Name()
 	removeTmp := true
@@ -262,29 +270,29 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 
 	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
-		return err
+		return false, err
 	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
-		return err
+		return false, err
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return err
+		return false, err
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return false, err
 	}
 
 	if err := os.Rename(tmpPath, path); err != nil {
-		return err
+		return false, err
 	}
 	removeTmp = false
 
-	if err := syncDir(dir); err != nil {
-		return err
+	if err := syncDirFunc(dir); err != nil {
+		return true, err
 	}
-	return nil
+	return true, nil
 }
 
 func syncDir(dir string) error {
