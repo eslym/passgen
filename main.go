@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -210,12 +211,15 @@ func renderOutput(opts options, passwords []string, pool string) (string, error)
 }
 
 func writeOutputFile(path, output string, errWriter io.Writer, in io.Reader, force bool) error {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed stating output file %q: %w", path, err)
 	}
 
 	if err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("output path %q is a symlink", path)
+		}
 		if info.IsDir() {
 			return fmt.Errorf("output path %q is a directory", path)
 		}
@@ -233,14 +237,63 @@ func writeOutputFile(path, output string, errWriter io.Writer, in io.Reader, for
 		}
 	}
 
-	if err := os.WriteFile(path, []byte(output), 0o600); err != nil {
+	if err := atomicWriteFile(path, []byte(output), 0o600); err != nil {
 		return fmt.Errorf("failed writing output file %q: %w", path, err)
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		return fmt.Errorf("failed setting output file %q mode to 600: %w", path, err)
 	}
 	fprintfErr(errWriter, "Wrote output to %s with mode 600\n", path)
 	return nil
+}
+
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+
+	tmp, err := os.CreateTemp(dir, "."+base+"-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	removeTmp = false
+
+	if err := syncDir(dir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 func confirmOverwrite(path string, errWriter io.Writer, in io.Reader) (bool, error) {

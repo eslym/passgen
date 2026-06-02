@@ -265,6 +265,46 @@ func TestWriteOutputFile(t *testing.T) {
 		if string(got) != content {
 			t.Fatalf("unexpected file content\nwant: %q\ngot:  %q", content, string(got))
 		}
+
+		info, err := os.Stat(outPath)
+		if err != nil {
+			t.Fatalf("failed stating output file: %v", err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("unexpected file mode\nwant: %o\ngot:  %o", 0o600, info.Mode().Perm())
+		}
+	})
+
+	t.Run("rejects symlink output path", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		targetPath := filepath.Join(tmpDir, "target.txt")
+		linkPath := filepath.Join(tmpDir, "secret.txt")
+		original := "keep me\n"
+		if err := os.WriteFile(targetPath, []byte(original), 0o600); err != nil {
+			t.Fatalf("failed preparing symlink target: %v", err)
+		}
+		if err := os.Symlink(targetPath, linkPath); err != nil {
+			t.Fatalf("failed preparing symlink: %v", err)
+		}
+
+		var errBuf bytes.Buffer
+		err := writeOutputFile(linkPath, "replace me\n", &errBuf, strings.NewReader(""), true)
+		if err == nil {
+			t.Fatalf("expected symlink rejection, got nil")
+		}
+		if !strings.Contains(err.Error(), "is a symlink") {
+			t.Fatalf("expected symlink rejection, got: %v", err)
+		}
+
+		got, err := os.ReadFile(targetPath)
+		if err != nil {
+			t.Fatalf("failed reading symlink target: %v", err)
+		}
+		if string(got) != original {
+			t.Fatalf("symlink target should not be changed\nwant: %q\ngot:  %q", original, string(got))
+		}
 	})
 
 	t.Run("warns and fixes existing file mode", func(t *testing.T) {
