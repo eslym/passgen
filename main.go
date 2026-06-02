@@ -295,15 +295,6 @@ func atomicWriteFileWithSync(path string, data []byte, mode os.FileMode, syncDir
 	return true, nil
 }
 
-func syncDir(dir string) error {
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
-}
-
 func confirmOverwrite(path string, errWriter io.Writer, in io.Reader) (bool, error) {
 	fprintfErr(errWriter, "Output file %s already exists. Overwrite? [y/N]: ", path)
 	line, err := bufio.NewReader(in).ReadString('\n')
