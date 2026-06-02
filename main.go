@@ -461,6 +461,9 @@ func addChars(pool, toAdd string) string {
 	return string(out)
 }
 
+// generatePassword requires a non-empty pool and a positive length. CLI callers
+// enforce both invariants before generation via flag validation and buildPool,
+// so further validation is unnecessary unless future caller changes break that contract.
 func generatePassword(pool string, length int) (string, error) {
 	runes := []rune(pool)
 	max := big.NewInt(int64(len(runes)))
