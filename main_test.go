@@ -371,6 +371,65 @@ func TestAtomicWriteFileReportsPostRenameSyncFailure(t *testing.T) {
 	}
 }
 
+func TestAtomicCreateFileRefusesExistingPath(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "secret.txt")
+	original := "existing\n"
+	if err := os.WriteFile(outPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("failed preparing output file: %v", err)
+	}
+
+	fileWritten, err := atomicCreateFileWithSync(outPath, []byte("new secret\n"), 0o600, func(string) error {
+		t.Fatalf("sync should not run when destination already exists")
+		return nil
+	})
+	if err == nil {
+		t.Fatalf("expected existing path error, got nil")
+	}
+	if fileWritten {
+		t.Fatalf("expected fileWritten to be false when destination already exists")
+	}
+
+	got, readErr := os.ReadFile(outPath)
+	if readErr != nil {
+		t.Fatalf("failed reading existing output file: %v", readErr)
+	}
+	if string(got) != original {
+		t.Fatalf("existing file should not be changed\nwant: %q\ngot:  %q", original, string(got))
+	}
+}
+
+func TestAtomicCreateFileReportsPostLinkSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "secret.txt")
+	syncErr := errors.New("sync failed")
+
+	fileWritten, err := atomicCreateFileWithSync(outPath, []byte("secret\n"), 0o600, func(dir string) error {
+		if dir != tmpDir {
+			t.Fatalf("unexpected sync directory\nwant: %q\ngot:  %q", tmpDir, dir)
+		}
+		return syncErr
+	})
+	if !fileWritten {
+		t.Fatalf("expected fileWritten to be true after link")
+	}
+	if !errors.Is(err, syncErr) {
+		t.Fatalf("expected sync error, got: %v", err)
+	}
+
+	got, readErr := os.ReadFile(outPath)
+	if readErr != nil {
+		t.Fatalf("expected linked file to exist: %v", readErr)
+	}
+	if string(got) != "secret\n" {
+		t.Fatalf("unexpected file content\nwant: %q\ngot:  %q", "secret\n", string(got))
+	}
+}
+
 func TestOutFlagSuppressesStdout(t *testing.T) {
 	t.Parallel()
 

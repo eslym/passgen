@@ -247,10 +247,15 @@ func writeOutputFile(path, output string, errWriter io.Writer, in io.Reader, for
 		}
 	}
 
-	fileReplaced, err := atomicWriteFile(path, []byte(output), 0o600)
+	fileWritten := false
+	if err == nil {
+		fileWritten, err = atomicWriteFile(path, []byte(output), 0o600)
+	} else {
+		fileWritten, err = atomicCreateFile(path, []byte(output), 0o600)
+	}
 	if err != nil {
-		if fileReplaced {
-			return fmt.Errorf("wrote output file %q, but failed syncing output directory: %w", path, err)
+		if fileWritten {
+			return fmt.Errorf("wrote output file %q, but failed finalizing output write: %w", path, err)
 		}
 		return fmt.Errorf("failed writing output file %q: %w", path, err)
 	}
@@ -260,6 +265,10 @@ func writeOutputFile(path, output string, errWriter io.Writer, in io.Reader, for
 
 func atomicWriteFile(path string, data []byte, mode os.FileMode) (bool, error) {
 	return atomicWriteFileWithSync(path, data, mode, syncDir)
+}
+
+func atomicCreateFile(path string, data []byte, mode os.FileMode) (bool, error) {
+	return atomicCreateFileWithSync(path, data, mode, syncDir)
 }
 
 func atomicWriteFileWithSync(path string, data []byte, mode os.FileMode, syncDirFunc func(string) error) (bool, error) {
@@ -296,6 +305,52 @@ func atomicWriteFileWithSync(path string, data []byte, mode os.FileMode, syncDir
 
 	if err := os.Rename(tmpPath, path); err != nil {
 		return false, err
+	}
+	removeTmp = false
+
+	if err := syncDirFunc(dir); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func atomicCreateFileWithSync(path string, data []byte, mode os.FileMode, syncDirFunc func(string) error) (bool, error) {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+
+	tmp, err := os.CreateTemp(dir, "."+base+"-*")
+	if err != nil {
+		return false, err
+	}
+	tmpPath := tmp.Name()
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return false, err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return false, err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return false, err
+	}
+	if err := tmp.Close(); err != nil {
+		return false, err
+	}
+
+	if err := os.Link(tmpPath, path); err != nil {
+		return false, err
+	}
+	if err := os.Remove(tmpPath); err != nil {
+		return true, err
 	}
 	removeTmp = false
 
