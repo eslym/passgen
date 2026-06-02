@@ -19,6 +19,18 @@
 
 ## Build and run
 
+Install with Go:
+
+```bash
+go install github.com/eslym/passgen@latest
+```
+
+The binary is installed to your Go binary directory, usually `$(go env GOPATH)/bin`. Ensure that directory is on your `PATH`, then run:
+
+```bash
+passgen --help
+```
+
 Run directly:
 
 ```bash
