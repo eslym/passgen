@@ -26,8 +26,8 @@ func TestBuildPool(t *testing.T) {
 			want: basePool,
 		},
 		{
-			name: "include and exclude overlap is rejected",
-			opts: options{uppercase: true, include: "A", exclude: "A"},
+			name:    "include and exclude overlap is rejected",
+			opts:    options{uppercase: true, include: "A", exclude: "A"},
 			wantErr: "include/exclude overlap",
 		},
 		{
@@ -51,8 +51,48 @@ func TestBuildPool(t *testing.T) {
 			want: strings.ReplaceAll(uppercaseChars+lowercaseChars, "A", "") + "1",
 		},
 		{
-			name: "empty pool after rules is rejected",
-			opts: options{uppercase: true, exclude: uppercaseChars},
+			name: "preset seeds pool before class flags",
+			opts: options{preset: "hex", uppercase: true},
+			want: hexChars + uppercaseChars,
+		},
+		{
+			name: "preset only when classes are disabled",
+			opts: options{preset: "base58"},
+			want: base58Chars,
+		},
+		{
+			name: "base64 alias matches canonical preset",
+			opts: options{preset: "b64"},
+			want: base64Chars,
+		},
+		{
+			name: "base64url alias matches canonical preset",
+			opts: options{preset: "b64url"},
+			want: base64URLChars,
+		},
+		{
+			name: "base58 alias matches canonical preset",
+			opts: options{preset: "b58"},
+			want: base58Chars,
+		},
+		{
+			name: "urlsafe filters preset and class flags",
+			opts: options{preset: "base64", urlsafe: true},
+			want: filterAllowed(base64Chars, urlSafeChars),
+		},
+		{
+			name: "include and exclude apply after preset",
+			opts: options{preset: "hex", exclude: "0a", include: "Z"},
+			want: strings.ReplaceAll(strings.ReplaceAll(hexChars, "0", ""), "a", "") + "Z",
+		},
+		{
+			name:    "unknown preset is rejected",
+			opts:    options{preset: "base32"},
+			wantErr: "unknown preset",
+		},
+		{
+			name:    "empty pool after rules is rejected",
+			opts:    options{uppercase: true, exclude: uppercaseChars},
 			wantErr: "character pool is empty",
 		},
 	}
@@ -162,4 +202,56 @@ func TestOutFlagSuppressesStdout(t *testing.T) {
 	if len(strings.TrimSpace(string(written))) == 0 {
 		t.Fatalf("expected output file to contain generated password")
 	}
+}
+
+func TestPresetModifierWarning(t *testing.T) {
+	t.Parallel()
+
+	t.Run("warns when preset is combined with effective pool modifiers", func(t *testing.T) {
+		t.Parallel()
+
+		opts := defaultOptions()
+		cmd := newRootCmd(&opts)
+		cmd.SetArgs([]string{"--preset", "b58", "--length", "1"})
+
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+
+		stderrMsg := stderr.String()
+		if !strings.Contains(stderrMsg, "Warning: --preset seeds the pool") {
+			t.Fatalf("expected preset warning, got: %q", stderrMsg)
+		}
+		for _, flag := range []string{"--uppercase", "--lowercase", "--numbers", "--symbols"} {
+			if !strings.Contains(stderrMsg, flag) {
+				t.Fatalf("expected warning to mention %s, got: %q", flag, stderrMsg)
+			}
+		}
+	})
+
+	t.Run("does not warn when preset is the only pool source", func(t *testing.T) {
+		t.Parallel()
+
+		opts := defaultOptions()
+		cmd := newRootCmd(&opts)
+		cmd.SetArgs([]string{"--preset", "b58", "--uppercase=false", "--lowercase=false", "--numbers=false", "--symbols=false", "--length", "1"})
+
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+
+		if stderr.Len() != 0 {
+			t.Fatalf("expected no stderr warning, got: %q", stderr.String())
+		}
+	})
 }

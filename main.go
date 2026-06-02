@@ -19,7 +19,23 @@ const (
 	numberChars    = "0123456789"
 	symbolChars    = "!\"#$%&'()*+,./:;<=>?@[\\]^`{|}~-"
 	urlSafeChars   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
+	base64Chars    = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	base64URLChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	base58Chars    = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+	hexChars       = "0123456789abcdef"
+	alnumChars     = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 )
+
+var presetPools = map[string]string{
+	"base64":    base64Chars,
+	"b64":       base64Chars,
+	"base64url": base64URLChars,
+	"b64url":    base64URLChars,
+	"base58":    base58Chars,
+	"b58":       base58Chars,
+	"hex":       hexChars,
+	"alnum":     alnumChars,
+}
 
 type options struct {
 	uppercase bool
@@ -27,6 +43,7 @@ type options struct {
 	numbers   bool
 	symbols   bool
 	urlsafe   bool
+	preset    string
 	include   string
 	exclude   string
 	length    int
@@ -68,6 +85,7 @@ func newRootCmd(opts *options) *cobra.Command {
 			"  passgen",
 			"  passgen --length 32",
 			"  passgen --count 5 --json",
+			"  passgen --preset b58 --symbols=false --uppercase=false --lowercase=false --numbers=false",
 			"  passgen --urlsafe --symbols=false",
 			"  passgen --include \"@#\" --exclude \"O0Il\"",
 			"  passgen --out ./secret.txt",
@@ -84,6 +102,7 @@ func newRootCmd(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnPresetPoolModifiers(*opts, cmd.ErrOrStderr())
 
 			passwords := make([]string, 0, opts.count)
 			for i := 0; i < opts.count; i++ {
@@ -119,6 +138,7 @@ func newRootCmd(opts *options) *cobra.Command {
 	cmd.Flags().BoolVarP(&opts.numbers, "numbers", "n", true, "include numbers in base pool")
 	cmd.Flags().BoolVarP(&opts.symbols, "symbols", "s", true, "include symbols in base pool")
 	cmd.Flags().BoolVarP(&opts.urlsafe, "urlsafe", "z", false, "filter base pool to URL-safe characters")
+	cmd.Flags().StringVarP(&opts.preset, "preset", "p", "", "seed pool with preset characters (base64/b64, base64url/b64url, base58/b58, hex, alnum)")
 
 	alpha := cmd.Flags().BoolP("alpha", "a", false, "enable both uppercase and lowercase")
 
@@ -198,6 +218,44 @@ func fprintfErr(w io.Writer, format string, args ...any) {
 	_, _ = fmt.Fprintf(w, format, args...)
 }
 
+func warnPresetPoolModifiers(opts options, errWriter io.Writer) {
+	modifiers := presetPoolModifiers(opts)
+	if len(modifiers) == 0 {
+		return
+	}
+	fprintfErr(errWriter, "Warning: --preset seeds the pool; additional pool flags also modify it: %s\n", strings.Join(modifiers, ", "))
+}
+
+func presetPoolModifiers(opts options) []string {
+	if opts.preset == "" {
+		return nil
+	}
+
+	var modifiers []string
+	if opts.uppercase {
+		modifiers = append(modifiers, "--uppercase")
+	}
+	if opts.lowercase {
+		modifiers = append(modifiers, "--lowercase")
+	}
+	if opts.numbers {
+		modifiers = append(modifiers, "--numbers")
+	}
+	if opts.symbols {
+		modifiers = append(modifiers, "--symbols")
+	}
+	if opts.urlsafe {
+		modifiers = append(modifiers, "--urlsafe")
+	}
+	if opts.exclude != "" {
+		modifiers = append(modifiers, "--exclude")
+	}
+	if opts.include != "" {
+		modifiers = append(modifiers, "--include")
+	}
+	return modifiers
+}
+
 func buildPool(opts options) (string, error) {
 	overlap := overlapCharacters(opts.include, opts.exclude)
 	if overlap != "" {
@@ -205,6 +263,13 @@ func buildPool(opts options) (string, error) {
 	}
 
 	var builder strings.Builder
+	if opts.preset != "" {
+		presetPool, ok := presetPools[opts.preset]
+		if !ok {
+			return "", fmt.Errorf("unknown preset %q", opts.preset)
+		}
+		builder.WriteString(presetPool)
+	}
 	if opts.uppercase {
 		builder.WriteString(uppercaseChars)
 	}

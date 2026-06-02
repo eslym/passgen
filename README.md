@@ -8,6 +8,7 @@
 ## Features
 
 - Uses `crypto/rand` for secure random generation.
+- Preset character pools for common formats like Base64 and Base58.
 - Configurable character sets (uppercase, lowercase, numbers, symbols).
 - Optional URL-safe pool filtering.
 - Supports explicit character include/exclude rules.
@@ -81,6 +82,12 @@ Use only URL-safe characters:
 passgen --urlsafe --symbols=false
 ```
 
+Seed the pool from a preset:
+
+```bash
+passgen --preset b58 --symbols=false --uppercase=false --lowercase=false --numbers=false
+```
+
 Force a few characters into the pool:
 
 ```bash
@@ -112,22 +119,34 @@ passgen --show-pool
   -l, --lowercase        include lowercase letters in base pool (default true)
   -n, --numbers          include numbers in base pool (default true)
       --out string       write output to file (mode 600), suppress stdout
+  -p, --preset string    seed pool with preset characters (base64/b64, base64url/b64url, base58/b58, hex, alnum)
   -s, --symbols          include symbols in base pool (default true)
       --show-pool        print effective character pool
   -u, --uppercase        include uppercase letters in base pool (default true)
   -z, --urlsafe          filter base pool to URL-safe characters
 ```
 
+Available presets:
+
+- `base64`, alias `b64`: `A-Z`, `a-z`, `0-9`, `+`, `/`
+- `base64url`, alias `b64url`: `A-Z`, `a-z`, `0-9`, `-`, `_`
+- `base58`, alias `b58`: Bitcoin Base58 alphabet, excluding `0`, `O`, `I`, and `l`
+- `hex`: `0-9`, `a-f`
+- `alnum`: `A-Z`, `a-z`, `0-9`
+
 ## Precedence and pool order
 
 Character pool construction is applied in this order:
 
-1. Start from enabled base classes (`--uppercase`, `--lowercase`, `--numbers`, `--symbols`).
-2. Apply URL-safe filtering if `--urlsafe` is enabled.
-3. Remove characters from `--exclude`.
-4. Add characters from `--include`.
+1. Start from `--preset` if set.
+2. Add enabled base classes (`--uppercase`, `--lowercase`, `--numbers`, `--symbols`).
+3. Apply URL-safe filtering if `--urlsafe` is enabled.
+4. Remove characters from `--exclude`.
+5. Add characters from `--include`.
 
 `--include` and `--exclude` are validated first. If they overlap, the command exits with an error.
+
+When `--preset` is used with any other effective pool modifier, `passgen` prints a warning to stderr because presets are only the starting point of the pool. This includes enabled character classes and `--urlsafe`, `--exclude`, or `--include`.
 
 ## Validation behavior
 
