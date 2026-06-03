@@ -99,17 +99,8 @@ func newRootCmd(opts *options) *cobra.Command {
 		}, "\n"),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if opts.length <= 0 {
-				return errors.New("--length must be greater than 0")
-			}
-			if opts.length > maxPasswordLength {
-				return fmt.Errorf("--length must be less than or equal to %d", maxPasswordLength)
-			}
-			if opts.count <= 0 {
-				return errors.New("--count must be greater than 0")
-			}
-			if opts.count > maxPasswordCount {
-				return fmt.Errorf("--count must be less than or equal to %d", maxPasswordCount)
+			if err := validateOptions(*opts); err != nil {
+				return err
 			}
 
 			pool, err := buildPool(*opts)
@@ -201,40 +192,63 @@ func newRootCmd(opts *options) *cobra.Command {
 	return cmd
 }
 
+func validateOptions(opts options) error {
+	if opts.length <= 0 {
+		return errors.New("--length must be greater than 0")
+	}
+	if opts.length > maxPasswordLength {
+		return fmt.Errorf("--length must be less than or equal to %d", maxPasswordLength)
+	}
+	if opts.count <= 0 {
+		return errors.New("--count must be greater than 0")
+	}
+	if opts.count > maxPasswordCount {
+		return fmt.Errorf("--count must be less than or equal to %d", maxPasswordCount)
+	}
+	return nil
+}
+
 func renderOutput(opts options, passwords []string, pool string) (string, error) {
 	if opts.jsonOut {
-		var payload any
-		if opts.count == 1 {
-			if opts.showPool {
-				payload = struct {
-					Password string `json:"password"`
-					Pool     string `json:"pool"`
-				}{Password: passwords[0], Pool: pool}
-			} else {
-				payload = struct {
-					Password string `json:"password"`
-				}{Password: passwords[0]}
-			}
-		} else {
-			if opts.showPool {
-				payload = struct {
-					Passwords []string `json:"passwords"`
-					Pool      string   `json:"pool"`
-				}{Passwords: passwords, Pool: pool}
-			} else {
-				payload = struct {
-					Passwords []string `json:"passwords"`
-				}{Passwords: passwords}
-			}
-		}
+		return renderJSONOutput(opts, passwords, pool)
+	}
+	return renderTextOutput(opts, passwords, pool), nil
+}
 
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return "", fmt.Errorf("json output failed: %w", err)
+func renderJSONOutput(opts options, passwords []string, pool string) (string, error) {
+	var payload any
+	if opts.count == 1 {
+		if opts.showPool {
+			payload = struct {
+				Password string `json:"password"`
+				Pool     string `json:"pool"`
+			}{Password: passwords[0], Pool: pool}
+		} else {
+			payload = struct {
+				Password string `json:"password"`
+			}{Password: passwords[0]}
 		}
-		return string(encoded) + "\n", nil
+	} else {
+		if opts.showPool {
+			payload = struct {
+				Passwords []string `json:"passwords"`
+				Pool      string   `json:"pool"`
+			}{Passwords: passwords, Pool: pool}
+		} else {
+			payload = struct {
+				Passwords []string `json:"passwords"`
+			}{Passwords: passwords}
+		}
 	}
 
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("json output failed: %w", err)
+	}
+	return string(encoded) + "\n", nil
+}
+
+func renderTextOutput(opts options, passwords []string, pool string) string {
 	var builder strings.Builder
 	if opts.showPool {
 		builder.WriteString(pool)
@@ -244,7 +258,7 @@ func renderOutput(opts options, passwords []string, pool string) (string, error)
 		builder.WriteString(pass)
 		builder.WriteString("\n")
 	}
-	return builder.String(), nil
+	return builder.String()
 }
 
 func writeOutputFile(path, output string, errWriter io.Writer, in io.Reader, force bool) error {
@@ -299,37 +313,16 @@ func atomicCreateFile(path string, data []byte, mode os.FileMode) (bool, error) 
 }
 
 func atomicWriteFileWithSync(path string, data []byte, mode os.FileMode, syncDirFunc func(string) error) (bool, error) {
-	dir := filepath.Dir(path)
-	base := filepath.Base(path)
-
-	tmp, err := os.CreateTemp(dir, "."+base+"-*")
+	dir, tmpPath, err := writeAtomicTempFile(path, data, mode)
 	if err != nil {
 		return false, err
 	}
-	tmpPath := tmp.Name()
 	removeTmp := true
 	defer func() {
 		if removeTmp {
 			_ = os.Remove(tmpPath)
 		}
 	}()
-
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return false, err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return false, err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return false, err
-	}
-	if err := tmp.Close(); err != nil {
-		return false, err
-	}
-
 	if err := os.Rename(tmpPath, path); err != nil {
 		return false, err
 	}
@@ -342,36 +335,16 @@ func atomicWriteFileWithSync(path string, data []byte, mode os.FileMode, syncDir
 }
 
 func atomicCreateFileWithSync(path string, data []byte, mode os.FileMode, syncDirFunc func(string) error) (bool, error) {
-	dir := filepath.Dir(path)
-	base := filepath.Base(path)
-
-	tmp, err := os.CreateTemp(dir, "."+base+"-*")
+	dir, tmpPath, err := writeAtomicTempFile(path, data, mode)
 	if err != nil {
 		return false, err
 	}
-	tmpPath := tmp.Name()
 	removeTmp := true
 	defer func() {
 		if removeTmp {
 			_ = os.Remove(tmpPath)
 		}
 	}()
-
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return false, err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return false, err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return false, err
-	}
-	if err := tmp.Close(); err != nil {
-		return false, err
-	}
 
 	if err := os.Link(tmpPath, path); err != nil {
 		return false, err
@@ -385,6 +358,41 @@ func atomicCreateFileWithSync(path string, data []byte, mode os.FileMode, syncDi
 		return true, err
 	}
 	return true, nil
+}
+
+func writeAtomicTempFile(path string, data []byte, mode os.FileMode) (string, string, error) {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+
+	tmp, err := os.CreateTemp(dir, "."+base+"-*")
+	if err != nil {
+		return "", "", err
+	}
+	tmpPath := tmp.Name()
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return "", "", err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return "", "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return "", "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", "", err
+	}
+	removeTmp = false
+	return dir, tmpPath, nil
 }
 
 func confirmOverwrite(path string, errWriter io.Writer, in io.Reader) (bool, error) {
@@ -414,28 +422,35 @@ func presetPoolModifiers(opts options, cmd *cobra.Command) []string {
 	}
 
 	var modifiers []string
-	if cmd.Flags().Changed("alpha") {
-		alpha, _ := cmd.Flags().GetBool("alpha")
-		if alpha {
-			modifiers = append(modifiers, "--alpha")
+	modifiers = appendChangedTrueBoolModifier(modifiers, cmd, "alpha")
+
+	for _, modifier := range []struct {
+		name  string
+		value bool
+	}{
+		{name: "uppercase", value: opts.uppercase},
+		{name: "lowercase", value: opts.lowercase},
+		{name: "numbers", value: opts.numbers},
+		{name: "symbols", value: opts.symbols},
+	} {
+		if cmd.Flags().Changed(modifier.name) {
+			modifiers = appendBoolModifier(modifiers, modifier.name, modifier.value)
 		}
 	}
-	if cmd.Flags().Changed("uppercase") {
-		modifiers = appendBoolModifier(modifiers, "uppercase", opts.uppercase)
-	}
-	if cmd.Flags().Changed("lowercase") {
-		modifiers = appendBoolModifier(modifiers, "lowercase", opts.lowercase)
-	}
-	if cmd.Flags().Changed("numbers") {
-		modifiers = appendBoolModifier(modifiers, "numbers", opts.numbers)
-	}
-	if cmd.Flags().Changed("symbols") {
-		modifiers = appendBoolModifier(modifiers, "symbols", opts.symbols)
-	}
-	if cmd.Flags().Changed("urlsafe") && opts.urlsafe {
-		modifiers = append(modifiers, "--urlsafe")
-	}
+
+	modifiers = appendChangedTrueBoolModifier(modifiers, cmd, "urlsafe")
 	return modifiers
+}
+
+func appendChangedTrueBoolModifier(modifiers []string, cmd *cobra.Command, name string) []string {
+	if !cmd.Flags().Changed(name) {
+		return modifiers
+	}
+	enabled, _ := cmd.Flags().GetBool(name)
+	if !enabled {
+		return modifiers
+	}
+	return append(modifiers, "--"+name)
 }
 
 func appendBoolModifier(modifiers []string, name string, value bool) []string {
