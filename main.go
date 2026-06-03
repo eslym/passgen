@@ -16,6 +16,9 @@ import (
 )
 
 const (
+	maxPasswordLength = 4096
+	maxPasswordCount  = 1000
+
 	uppercaseChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	lowercaseChars = "abcdefghijklmnopqrstuvwxyz"
 	numberChars    = "0123456789"
@@ -94,12 +97,19 @@ func newRootCmd(opts *options) *cobra.Command {
 			"  passgen --include \"@#\" --exclude \"O0Il\"",
 			"  passgen --out ./secret.txt",
 		}, "\n"),
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if opts.length <= 0 {
 				return errors.New("--length must be greater than 0")
 			}
+			if opts.length > maxPasswordLength {
+				return fmt.Errorf("--length must be less than or equal to %d", maxPasswordLength)
+			}
 			if opts.count <= 0 {
 				return errors.New("--count must be greater than 0")
+			}
+			if opts.count > maxPasswordCount {
+				return fmt.Errorf("--count must be less than or equal to %d", maxPasswordCount)
 			}
 
 			pool, err := buildPool(*opts)
@@ -148,8 +158,8 @@ func newRootCmd(opts *options) *cobra.Command {
 
 	cmd.Flags().StringVarP(&opts.include, "include", "i", "", "add specific characters after filtering")
 	cmd.Flags().StringVarP(&opts.exclude, "exclude", "x", "", "remove specific characters before include")
-	cmd.Flags().IntVarP(&opts.length, "length", "k", 16, "password length")
-	cmd.Flags().IntVarP(&opts.count, "count", "c", 1, "number of passwords to generate")
+	cmd.Flags().IntVarP(&opts.length, "length", "k", 16, "password length, 1-4096")
+	cmd.Flags().IntVarP(&opts.count, "count", "c", 1, "number of passwords to generate, 1-1000")
 	cmd.Flags().BoolVar(&opts.jsonOut, "json", false, "output as JSON")
 	cmd.Flags().BoolVar(&opts.showPool, "show-pool", false, "print effective character pool")
 	cmd.Flags().StringVar(&opts.out, "out", "", "write output to file (mode 600), suppress stdout")

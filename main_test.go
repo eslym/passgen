@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -22,6 +23,64 @@ func executeCommand(args ...string) (string, string, error) {
 
 	err := cmd.Execute()
 	return stdout.String(), stderr.String(), err
+}
+
+func TestRootCommandValidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects positional arguments", func(t *testing.T) {
+		t.Parallel()
+
+		stdout, stderr, err := executeCommand("unexpected", "--length", "1")
+		if err == nil {
+			t.Fatalf("expected positional argument error, got nil")
+		}
+		if !strings.Contains(err.Error(), "unexpected") {
+			t.Fatalf("expected error to mention unexpected argument, got: %v", err)
+		}
+		if stdout != "" {
+			t.Fatalf("expected no stdout on validation error, got: %q", stdout)
+		}
+		if stderr != "" {
+			t.Fatalf("expected no command stderr on returned error, got: %q", stderr)
+		}
+	})
+
+	t.Run("rejects length above maximum", func(t *testing.T) {
+		t.Parallel()
+
+		stdout, stderr, err := executeCommand("--length", strconv.Itoa(maxPasswordLength+1))
+		if err == nil {
+			t.Fatalf("expected length validation error, got nil")
+		}
+		if !strings.Contains(err.Error(), "--length must be less than or equal to") {
+			t.Fatalf("expected length maximum error, got: %v", err)
+		}
+		if stdout != "" {
+			t.Fatalf("expected no stdout on validation error, got: %q", stdout)
+		}
+		if stderr != "" {
+			t.Fatalf("expected no command stderr on returned error, got: %q", stderr)
+		}
+	})
+
+	t.Run("rejects count above maximum", func(t *testing.T) {
+		t.Parallel()
+
+		stdout, stderr, err := executeCommand("--count", strconv.Itoa(maxPasswordCount+1))
+		if err == nil {
+			t.Fatalf("expected count validation error, got nil")
+		}
+		if !strings.Contains(err.Error(), "--count must be less than or equal to") {
+			t.Fatalf("expected count maximum error, got: %v", err)
+		}
+		if stdout != "" {
+			t.Fatalf("expected no stdout on validation error, got: %q", stdout)
+		}
+		if stderr != "" {
+			t.Fatalf("expected no command stderr on returned error, got: %q", stderr)
+		}
+	})
 }
 
 func TestBuildPool(t *testing.T) {

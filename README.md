@@ -128,13 +128,13 @@ passgen --show-pool
 
 ```text
   -a, --alpha            enable both uppercase and lowercase
-  -c, --count int        number of passwords to generate (default 1)
+  -c, --count int        number of passwords to generate, 1-1000 (default 1)
   -x, --exclude string   exclude specific characters
   -f, --force            overwrite existing output file without confirmation
   -h, --help             help for passgen
   -i, --include string   add specific characters after filtering
       --json             output as JSON
-  -k, --length int       password length (default 16)
+  -k, --length int       password length, 1-4096 (default 16)
   -l, --lowercase        include lowercase letters in base pool (default true)
   -n, --numbers          include numbers in base pool (default true)
       --out string       write output to file (mode 600), suppress stdout
@@ -169,7 +169,9 @@ When `--preset` is used, default base classes are not added. Explicit base-class
 
 ## Validation behavior
 
-- `--length` must be greater than `0`.
+- Positional arguments are not accepted.
+- `--length` must be between `1` and `4096`.
+- `--count` must be between `1` and `1000`.
 - When `--out` is set, output is written only to the file (mode `600`) and a status line is printed to stderr.
 - Existing `--out` files require confirmation unless `--force` is set.
 - Existing `--out` files with a mode other than `600` print a warning to stderr before the mode is updated.
