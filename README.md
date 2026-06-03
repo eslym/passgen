@@ -100,10 +100,10 @@ Use only URL-safe characters:
 passgen --urlsafe --symbols=false
 ```
 
-Seed the pool from a preset:
+Use a preset pool:
 
 ```bash
-passgen --preset b58 --symbols=false --uppercase=false --lowercase=false --numbers=false
+passgen --preset b58
 ```
 
 Force a few characters into the pool:
@@ -138,7 +138,7 @@ passgen --show-pool
   -l, --lowercase        include lowercase letters in base pool (default true)
   -n, --numbers          include numbers in base pool (default true)
       --out string       write output to file (mode 600), suppress stdout
-  -p, --preset string    seed pool with preset characters (base64/b64, base64url/b64url, base58/b58, hex, alnum)
+  -p, --preset string    replace pool with preset characters (base64/b64, base64url/b64url, base58/b58, hex, alnum)
   -s, --symbols          include symbols in base pool (default true)
       --show-pool        print effective character pool
   -u, --uppercase        include uppercase letters in base pool (default true)
@@ -157,15 +157,15 @@ Available presets:
 
 Character pool construction is applied in this order:
 
-1. Start from `--preset` if set.
-2. Add enabled base classes (`--uppercase`, `--lowercase`, `--numbers`, `--symbols`).
-3. Apply URL-safe filtering if `--urlsafe` is enabled.
+1. Add enabled base classes (`--uppercase`, `--lowercase`, `--numbers`, `--symbols`).
+2. Apply URL-safe filtering if `--urlsafe` is enabled.
+3. Replace with `--preset` if set.
 4. Remove characters from `--exclude`.
 5. Add characters from `--include`.
 
 `--include` and `--exclude` are validated first. If they overlap, the command exits with an error.
 
-When `--preset` is used with any other effective pool modifier, `passgen` prints a warning to stderr because presets are only the starting point of the pool. This includes enabled character classes and `--urlsafe`, `--exclude`, or `--include`.
+When `--preset` is used, default base classes are not added. Explicit base-class flags, `--alpha`, or `--urlsafe` with `--preset` print a warning to stderr because `--preset` replaces the earlier pool. Preset characters are preserved unless removed by `--exclude`.
 
 ## Validation behavior
 

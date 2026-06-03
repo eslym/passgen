@@ -67,9 +67,9 @@ func TestBuildPool(t *testing.T) {
 			want: strings.ReplaceAll(uppercaseChars+lowercaseChars, "A", "") + "1",
 		},
 		{
-			name: "preset seeds pool before class flags",
+			name: "preset replaces earlier base flags",
 			opts: options{preset: "hex", uppercase: true},
-			want: hexChars + uppercaseChars,
+			want: hexChars,
 		},
 		{
 			name: "preset only when classes are disabled",
@@ -92,9 +92,9 @@ func TestBuildPool(t *testing.T) {
 			want: base58Chars,
 		},
 		{
-			name: "urlsafe filters preset and class flags",
+			name: "preset replaces urlsafe-filtered pool",
 			opts: options{preset: "base64", urlsafe: true},
-			want: filterAllowed(base64Chars, urlSafeChars),
+			want: base64Chars,
 		},
 		{
 			name: "include and exclude apply after preset",
@@ -553,51 +553,95 @@ func TestOutFlagExistingFileConfirmation(t *testing.T) {
 func TestPresetModifierWarning(t *testing.T) {
 	t.Parallel()
 
-	t.Run("warns when preset is combined with effective pool modifiers", func(t *testing.T) {
+	t.Run("does not warn for default base flags with preset", func(t *testing.T) {
 		t.Parallel()
 
-		opts := defaultOptions()
-		cmd := newRootCmd(&opts)
-		cmd.SetArgs([]string{"--preset", "b58", "--length", "1"})
-
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		cmd.SetOut(&stdout)
-		cmd.SetErr(&stderr)
-
-		if err := cmd.Execute(); err != nil {
+		_, stderr, err := executeCommand("--preset", "b58", "--length", "1")
+		if err != nil {
 			t.Fatalf("command execution failed: %v", err)
 		}
-
-		stderrMsg := stderr.String()
-		if !strings.Contains(stderrMsg, "Warning: --preset seeds the pool") {
-			t.Fatalf("expected preset warning, got: %q", stderrMsg)
-		}
-		for _, flag := range []string{"--uppercase", "--lowercase", "--numbers", "--symbols"} {
-			if !strings.Contains(stderrMsg, flag) {
-				t.Fatalf("expected warning to mention %s, got: %q", flag, stderrMsg)
-			}
+		if stderr != "" {
+			t.Fatalf("expected no preset warning, got: %q", stderr)
 		}
 	})
 
-	t.Run("does not warn when preset is the only pool source", func(t *testing.T) {
+	t.Run("warns when preset is combined with explicit true base flag", func(t *testing.T) {
 		t.Parallel()
 
-		opts := defaultOptions()
-		cmd := newRootCmd(&opts)
-		cmd.SetArgs([]string{"--preset", "b58", "--uppercase=false", "--lowercase=false", "--numbers=false", "--symbols=false", "--length", "1"})
+		_, stderr, err := executeCommand("--preset", "b58", "--uppercase", "--length", "1")
+		if err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if !strings.Contains(stderr, "Warning: --preset overrides earlier pool modifiers") {
+			t.Fatalf("expected preset warning, got: %q", stderr)
+		}
+		if !strings.Contains(stderr, "--uppercase") {
+			t.Fatalf("expected warning to mention --uppercase, got: %q", stderr)
+		}
+	})
 
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		cmd.SetOut(&stdout)
-		cmd.SetErr(&stderr)
+	t.Run("warns when preset is combined with explicit false base flag", func(t *testing.T) {
+		t.Parallel()
 
-		if err := cmd.Execute(); err != nil {
+		_, stderr, err := executeCommand("--preset", "b58", "--uppercase=false", "--length", "1")
+		if err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if !strings.Contains(stderr, "Warning: --preset overrides earlier pool modifiers") {
+			t.Fatalf("expected preset warning, got: %q", stderr)
+		}
+		if !strings.Contains(stderr, "--uppercase=false") {
+			t.Fatalf("expected warning to mention --uppercase=false, got: %q", stderr)
+		}
+	})
+
+	t.Run("warns when preset is combined with urlsafe", func(t *testing.T) {
+		t.Parallel()
+
+		_, stderr, err := executeCommand("--preset", "base64", "--urlsafe", "--length", "1")
+		if err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if !strings.Contains(stderr, "Warning: --preset overrides earlier pool modifiers") {
+			t.Fatalf("expected preset warning, got: %q", stderr)
+		}
+		if !strings.Contains(stderr, "--urlsafe") {
+			t.Fatalf("expected warning to mention --urlsafe, got: %q", stderr)
+		}
+	})
+
+	t.Run("warns when preset is combined with alpha", func(t *testing.T) {
+		t.Parallel()
+
+		stdout, stderr, err := executeCommand("--preset", "hex", "--alpha", "--show-pool", "--length", "1")
+		if err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if !strings.Contains(stderr, "Warning: --preset overrides earlier pool modifiers") {
+			t.Fatalf("expected preset warning, got: %q", stderr)
+		}
+		if !strings.Contains(stderr, "--alpha") {
+			t.Fatalf("expected warning to mention --alpha, got: %q", stderr)
+		}
+
+		poolLine := strings.SplitN(stdout, "\n", 2)[0]
+		if poolLine != hexChars {
+			t.Fatalf("unexpected pool line\nwant: %q\ngot:  %q", hexChars, poolLine)
+		}
+	})
+
+	t.Run("explicit disabled base flags warn", func(t *testing.T) {
+		t.Parallel()
+
+		_, stderr, err := executeCommand("--preset", "b58", "--uppercase=false", "--lowercase=false", "--numbers=false", "--symbols=false", "--length", "1")
+		if err != nil {
 			t.Fatalf("command execution failed: %v", err)
 		}
 
-		if stderr.Len() != 0 {
-			t.Fatalf("expected no stderr warning, got: %q", stderr.String())
+		for _, flag := range []string{"--uppercase=false", "--lowercase=false", "--numbers=false", "--symbols=false"} {
+			if !strings.Contains(stderr, flag) {
+				t.Fatalf("expected warning to mention %s, got: %q", flag, stderr)
+			}
 		}
 	})
 }
@@ -633,6 +677,31 @@ func TestPresetCLIBehavior(t *testing.T) {
 	t.Parallel()
 
 	classOffArgs := []string{"--uppercase=false", "--lowercase=false", "--numbers=false", "--symbols=false"}
+	expectClassOffWarning := func(t *testing.T, stderr string) {
+		t.Helper()
+		for _, flag := range classOffArgs {
+			if !strings.Contains(stderr, flag) {
+				t.Fatalf("expected warning to mention %s, got: %q", flag, stderr)
+			}
+		}
+	}
+
+	t.Run("preset without explicit base flags uses preset-only pool", func(t *testing.T) {
+		t.Parallel()
+
+		stdout, stderr, err := executeCommand("--preset", "b58", "--show-pool", "--length", "1")
+		if err != nil {
+			t.Fatalf("command execution failed: %v", err)
+		}
+		if stderr != "" {
+			t.Fatalf("expected no stderr, got: %q", stderr)
+		}
+
+		poolLine := strings.SplitN(stdout, "\n", 2)[0]
+		if poolLine != base58Chars {
+			t.Fatalf("unexpected pool line\nwant: %q\ngot:  %q", base58Chars, poolLine)
+		}
+	})
 
 	t.Run("show-pool prints preset-only pool before password", func(t *testing.T) {
 		t.Parallel()
@@ -642,9 +711,7 @@ func TestPresetCLIBehavior(t *testing.T) {
 		if err != nil {
 			t.Fatalf("command execution failed: %v", err)
 		}
-		if stderr != "" {
-			t.Fatalf("expected no stderr, got: %q", stderr)
-		}
+		expectClassOffWarning(t, stderr)
 
 		lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
 		if len(lines) != 2 {
@@ -671,9 +738,7 @@ func TestPresetCLIBehavior(t *testing.T) {
 		if err != nil {
 			t.Fatalf("command execution failed: %v", err)
 		}
-		if stderr != "" {
-			t.Fatalf("expected no stderr, got: %q", stderr)
-		}
+		expectClassOffWarning(t, stderr)
 
 		poolLine := strings.SplitN(stdout, "\n", 2)[0]
 		if poolLine != base64URLChars {
@@ -689,9 +754,7 @@ func TestPresetCLIBehavior(t *testing.T) {
 		if err != nil {
 			t.Fatalf("command execution failed: %v", err)
 		}
-		if stderr != "" {
-			t.Fatalf("expected no stderr, got: %q", stderr)
-		}
+		expectClassOffWarning(t, stderr)
 
 		var payload struct {
 			Password string `json:"password"`
@@ -708,7 +771,7 @@ func TestPresetCLIBehavior(t *testing.T) {
 		}
 	})
 
-	t.Run("urlsafe filters preset output", func(t *testing.T) {
+	t.Run("preset preserves base64 characters after urlsafe", func(t *testing.T) {
 		t.Parallel()
 
 		args := append([]string{"--preset", "base64", "--urlsafe", "--show-pool", "--length", "1"}, classOffArgs...)
@@ -720,13 +783,13 @@ func TestPresetCLIBehavior(t *testing.T) {
 			t.Fatalf("expected warning to mention --urlsafe, got: %q", stderr)
 		}
 
-		wantPool := filterAllowed(base64Chars, urlSafeChars)
+		wantPool := base64Chars
 		poolLine := strings.SplitN(stdout, "\n", 2)[0]
 		if poolLine != wantPool {
 			t.Fatalf("unexpected pool line\nwant: %q\ngot:  %q", wantPool, poolLine)
 		}
-		if strings.ContainsAny(poolLine, "+/") {
-			t.Fatalf("urlsafe pool should not contain + or /, got: %q", poolLine)
+		if !strings.ContainsAny(poolLine, "+/") {
+			t.Fatalf("preset should preserve + or / after urlsafe filtering, got: %q", poolLine)
 		}
 	})
 
